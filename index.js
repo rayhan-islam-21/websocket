@@ -1,53 +1,44 @@
-const express = require("express");
-const http = require("http");
-const WebSocket = require("ws");
+// server.js
+import express from "express";
+import http from "http";
+import { WebSocketServer } from "ws";
+import cors from "cors";
 
 const app = express();
+app.use(cors());
+
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocketServer({ server });
 
-// Replace with your ESP32 IP and port
-const ESP32_IP = "192.168.0.103";
-const ESP32_PORT = 81;
+let esp32Client = null;
 
-// Connect to ESP32 WebSocket
-let espSocket = new WebSocket(`ws://${ESP32_IP}:${ESP32_PORT}`);
+wss.on("connection", (ws, req) => {
+  console.log("Client connected");
 
-espSocket.on("open", () => console.log("Connected to ESP32"));
+  ws.on("message", (msg) => {
+    console.log("Message:", msg.toString());
 
-espSocket.on("message", (msg) => {
-  console.log("Data from ESP32:", msg.toString());
-  // Broadcast to all frontend clients
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(msg.toString());
+    if (msg.toString().includes("ESP32 connected")) {
+      esp32Client = ws;
+      console.log("ESP32 registered ✅");
+    } else {
+      if (esp32Client && esp32Client.readyState === ws.OPEN) {
+        esp32Client.send(msg.toString());
+      }
     }
+  });
+
+  ws.on("close", () => {
+    if (esp32Client === ws) esp32Client = null;
+    console.log("Client disconnected");
   });
 });
 
-espSocket.on("close", () => {
-  console.log("ESP32 disconnected, retrying in 5s...");
-  setTimeout(() => {
-    espSocket = new WebSocket(`ws://${ESP32_IP}:${ESP32_PORT}`);
-  }, 5000);
-});
-
-// Optional route for testing
 app.get("/", (req, res) => res.send("WebSocket server running"));
 
-// Handle WebSocket connections from frontend
-wss.on("connection", (ws) => {
-  console.log("Frontend client connected");
+const PORT = process.env.PORT || 3008;
+server.listen(PORT, () => console.log(`✅ Server running on ${PORT}`));
 
-  ws.on("message", (message) => {
-    console.log("Command from frontend:", message.toString());
-    // Forward command to ESP32
-    if (espSocket.readyState === WebSocket.OPEN) {
-      espSocket.send(message.toString());
-    }
-  });
-
-  ws.on("close", () => console.log("Frontend client disconnected"));
 });
 
 // Start server
